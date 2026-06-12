@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import CreateQuestionForm from "../components/CreateQuestionForm";
 import CreateQuizForm from "../components/CreateQuizForm";
 
 type Quiz = {
@@ -11,6 +12,8 @@ function HomePage() {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
+  const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -41,7 +44,10 @@ function HomePage() {
             <p>Build, manage and test yourself</p>
           </div>
 
-          <button className="primary-button" onClick={() => setShowCreateForm(true)}>
+          <button
+            className="primary-button"
+            onClick={() => setShowCreateForm(true)}
+          >
             Create new quiz
           </button>
         </header>
@@ -59,6 +65,44 @@ function HomePage() {
         <section className="quiz-section">
           <h2>Available Quizzes</h2>
 
+          {selectedQuiz && (
+            <div className="quiz-detail">
+              <div>
+                <span className="detail-label">Selected quiz</span>
+                <h2>{selectedQuiz.title}</h2>
+                <p>{selectedQuiz.description}</p>
+              </div>
+              <button
+                className="secondary-button"
+                onClick={() => setSelectedQuiz(null)}
+              >
+                Back
+              </button>
+            </div>
+          )}
+
+          {editingQuiz && (
+            <div className="quiz-detail">
+              <div>
+                <span className="detail-label">Editing quiz</span>
+                <h2>{editingQuiz.title}</h2>
+                <p>{editingQuiz.description}</p>
+              </div>
+              <button
+                className="secondary-button"
+                onClick={() => setEditingQuiz(null)}
+              >
+                Back
+              </button>
+              <CreateQuestionForm
+                quizId={editingQuiz.id}
+                onQuestionCreated={(question) => {
+                  console.log("Question created:", question);
+                }}
+              />
+            </div>
+          )}
+
           {quizzes.length === 0 ? (
             <div className="empty-state">No quizzes available</div>
           ) : (
@@ -69,8 +113,26 @@ function HomePage() {
                   <p>{quiz.description}</p>
 
                   <div className="card-actions">
-                    <button className="primary-button">Start Quiz</button>
-                    <button className="secondary-button">Edit Quiz</button>
+                    <button
+                      className="primary-button"
+                      onClick={() => {
+                        setSelectedQuiz(quiz);
+                        setEditingQuiz(null);
+                      }}
+                    >
+                      Start Quiz
+                    </button>
+
+                    <button
+                      className="secondary-button"
+                      onClick={() => {
+                        setEditingQuiz(quiz);
+                        setSelectedQuiz(null);
+                      }}
+                    >
+                      Edit Quiz
+                    </button>
+                    <button className="secondary-button">Delete Quiz</button>
                   </div>
                 </article>
               ))}
