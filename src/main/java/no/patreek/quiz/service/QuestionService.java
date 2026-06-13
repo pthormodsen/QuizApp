@@ -56,4 +56,11 @@ public class QuestionService {
         );
     }
 
+    public List<QuestionResponse> getQuestionsForQuiz(Long quizId) {
+        List<Question> questions = questionRepository.findByQuizId(quizId);
+        return questions.stream()
+                .map(q -> new QuestionResponse(q.getId(), q.getText()))
+                .toList();
+    }
+
 }

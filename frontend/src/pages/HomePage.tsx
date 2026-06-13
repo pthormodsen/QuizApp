@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import CreateQuestionForm from "../components/CreateQuestionForm";
 import CreateQuizForm from "../components/CreateQuizForm";
+import QuestionList from "../components/QuestionList";
 
 type Quiz = {
   id: number;
@@ -8,12 +9,19 @@ type Quiz = {
   description: string;
 };
 
+type Question = {
+  id: number;
+  text: string;
+};
+
 function HomePage() {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 
   useEffect(() => {
     async function fetchData() {
@@ -30,6 +38,31 @@ function HomePage() {
     }
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const activeQuiz = editingQuiz ?? selectedQuiz;
+
+    if (!activeQuiz) {
+      setQuestions([]);
+      return;
+    }
+
+    const quizId = activeQuiz.id;
+
+    async function fetchQuestions() {
+      try {
+        const response = await fetch(
+          `http://localhost:8080/api/quizzes/${quizId}/questions`,
+        );
+        const result = await response.json();
+        setQuestions(result);
+      } catch (error) {
+        console.error("Failed to fetch questions:", error);
+      }
+    }
+
+    fetchQuestions();
+  }, [editingQuiz, selectedQuiz]);
 
   if (isLoading) {
     return <p className="loading-message">Loading quizzes...</p>;
@@ -71,6 +104,35 @@ function HomePage() {
                 <span className="detail-label">Selected quiz</span>
                 <h2>{selectedQuiz.title}</h2>
                 <p>{selectedQuiz.description}</p>
+                {questions.length === 0 ? (
+                  <p>No questions in this quiz yet.</p>
+                ) : (
+                  <div>
+                    <p>
+                      Question {currentQuestionIndex + 1} of {questions.length}
+                    </p>
+
+                    <h3>{questions[currentQuestionIndex].text}</h3>
+
+                    <button
+                      disabled={currentQuestionIndex === 0}
+                      onClick={() =>
+                        setCurrentQuestionIndex(currentQuestionIndex - 1)
+                      }
+                    >
+                      Previous
+                    </button>
+
+                    <button
+                      disabled={currentQuestionIndex === questions.length - 1}
+                      onClick={() =>
+                        setCurrentQuestionIndex(currentQuestionIndex + 1)
+                      }
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
               </div>
               <button
                 className="secondary-button"
@@ -94,10 +156,14 @@ function HomePage() {
               >
                 Back
               </button>
+              <QuestionList questions={questions} />
               <CreateQuestionForm
                 quizId={editingQuiz.id}
                 onQuestionCreated={(question) => {
-                  console.log("Question created:", question);
+                  setQuestions((currentQuestions) => [
+                    ...currentQuestions,
+                    question,
+                  ]);
                 }}
               />
             </div>
@@ -118,6 +184,7 @@ function HomePage() {
                       onClick={() => {
                         setSelectedQuiz(quiz);
                         setEditingQuiz(null);
+                        setCurrentQuestionIndex(0);
                       }}
                     >
                       Start Quiz
@@ -126,8 +193,8 @@ function HomePage() {
                     <button
                       className="secondary-button"
                       onClick={() => {
-                        setEditingQuiz(quiz);
                         setSelectedQuiz(null);
+                        setEditingQuiz(quiz);
                       }}
                     >
                       Edit Quiz

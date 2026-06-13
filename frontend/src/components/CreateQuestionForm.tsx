@@ -5,12 +5,16 @@ type Question = {
   text: string;
 };
 
+
 type CreateQuestionFormProps = {
   quizId: number;
   onQuestionCreated: (question: Question) => void;
 };
 
-function CreateQuestionForm({ quizId, onQuestionCreated }: CreateQuestionFormProps) {
+function CreateQuestionForm({
+  quizId,
+  onQuestionCreated,
+}: CreateQuestionFormProps) {
   const [text, setText] = useState("");
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -34,7 +38,7 @@ function CreateQuestionForm({ quizId, onQuestionCreated }: CreateQuestionFormPro
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ text }),
-        }
+        },
       );
       if (!response.ok) {
         throw new Error("Failed to create question");
@@ -52,16 +56,20 @@ function CreateQuestionForm({ quizId, onQuestionCreated }: CreateQuestionFormPro
   };
 
   return (
-    <form className="create-form" onSubmit={handleSubmit}>
-      <h2>Create Question</h2>
-      <input
-        type="text"
-        placeholder="Question text"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
-      <button className="primary-button" type="submit">Create Question</button>
-    </form>
+    <div>
+      <form className="create-form" onSubmit={handleSubmit}>
+        <h2>Create Question</h2>
+        <input
+          type="text"
+          placeholder="Question text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <button className="primary-button" type="submit">
+          Create Question
+        </button>
+      </form>
+    </div>
   );
 }
 

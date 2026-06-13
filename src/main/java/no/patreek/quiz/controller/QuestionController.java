@@ -1,16 +1,13 @@
 package no.patreek.quiz.controller;
 
 import java.net.URI;
+import java.util.List;
+
 import no.patreek.quiz.dto.quiz.CreateQuestionRequest;
 import no.patreek.quiz.dto.quiz.QuestionResponse;
 import no.patreek.quiz.service.QuestionService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
@@ -30,12 +27,17 @@ public class QuestionController {
     ) {
         QuestionResponse response = questionService.createQuestion(quizId, request);
 
-        if (response == null) {
-            return ResponseEntity.notFound().build();
-        }
-
         return ResponseEntity
                 .created(URI.create("/api/quizzes/" + quizId + "/questions/" + response.id()))
                 .body(response);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<QuestionResponse>> getQuestionsForQuiz(
+            @PathVariable Long quizId
+    ) {
+        List<QuestionResponse> responses = questionService.getQuestionsForQuiz(quizId);
+
+        return ResponseEntity.ok(responses);
     }
 }
