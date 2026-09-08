@@ -20,8 +20,8 @@ public class QuestionService {
         this.quizRepository = quizRepository;
     }
 
-    public QuestionResponse createQuestion(Long quizId, CreateQuestionRequest request) {
-        Quiz quiz = quizRepository.findById(quizId).orElse(null);
+    public QuestionResponse createQuestion(Long quizId, CreateQuestionRequest request, Long ownerId) {
+        Quiz quiz = quizRepository.findByIdAndOwnerId(quizId, ownerId).orElse(null);
 
         if (quiz == null) {
             return null;
@@ -39,24 +39,13 @@ public class QuestionService {
         );
     }
 
-    public List<Question> getQuestions() {
-        return questionRepository.findAll();
-    }
+    public List<QuestionResponse> getQuestionsForQuiz(Long quizId, Long ownerId) {
+        Quiz quiz = quizRepository.findByIdAndOwnerId(quizId, ownerId).orElse(null);
 
-    public QuestionResponse getQuestion(Long questionId) {
-        Question question = questionRepository.findById(questionId).orElse(null);
-
-        if (question == null) {
+        if (quiz == null) {
             return null;
         }
 
-        return new QuestionResponse(
-            question.getId(),
-            question.getText()
-        );
-    }
-
-    public List<QuestionResponse> getQuestionsForQuiz(Long quizId) {
         List<Question> questions = questionRepository.findByQuizId(quizId);
         return questions.stream()
                 .map(q -> new QuestionResponse(q.getId(), q.getText()))

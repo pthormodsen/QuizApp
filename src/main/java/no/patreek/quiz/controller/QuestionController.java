@@ -5,12 +5,13 @@ import java.util.List;
 
 import no.patreek.quiz.dto.quiz.CreateQuestionRequest;
 import no.patreek.quiz.dto.quiz.QuestionResponse;
+import no.patreek.quiz.model.User;
 import no.patreek.quiz.service.QuestionService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
 @RequestMapping("/api/quizzes/{quizId}/questions")
 public class QuestionController {
 
@@ -23,9 +24,14 @@ public class QuestionController {
     @PostMapping
     public ResponseEntity<QuestionResponse> createQuestion(
             @PathVariable Long quizId,
-            @RequestBody CreateQuestionRequest request
+            @RequestBody CreateQuestionRequest request,
+            @AuthenticationPrincipal User currentUser
     ) {
-        QuestionResponse response = questionService.createQuestion(quizId, request);
+        QuestionResponse response = questionService.createQuestion(quizId, request, currentUser.getId());
+
+        if (response == null) {
+            return ResponseEntity.notFound().build();
+        }
 
         return ResponseEntity
                 .created(URI.create("/api/quizzes/" + quizId + "/questions/" + response.id()))
@@ -34,9 +40,14 @@ public class QuestionController {
 
     @GetMapping
     public ResponseEntity<List<QuestionResponse>> getQuestionsForQuiz(
-            @PathVariable Long quizId
+            @PathVariable Long quizId,
+            @AuthenticationPrincipal User currentUser
     ) {
-        List<QuestionResponse> responses = questionService.getQuestionsForQuiz(quizId);
+        List<QuestionResponse> responses = questionService.getQuestionsForQuiz(quizId, currentUser.getId());
+
+        if (responses == null) {
+            return ResponseEntity.notFound().build();
+        }
 
         return ResponseEntity.ok(responses);
     }

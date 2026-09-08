@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiPost } from "../api/client";
 
 type Question = {
   id: number;
@@ -30,20 +31,10 @@ function CreateQuestionForm({
 
   const submitForm = async () => {
     try {
-      const response = await fetch(
-        `http://localhost:8080/api/quizzes/${quizId}/questions`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ text }),
-        },
+      const createdQuestion = await apiPost<Question>(
+        `/api/quizzes/${quizId}/questions`,
+        { text },
       );
-      if (!response.ok) {
-        throw new Error("Failed to create question");
-      }
-      const createdQuestion = await response.json();
       onQuestionCreated(createdQuestion);
       console.log("Question created successfully");
     } catch (error) {
@@ -57,15 +48,19 @@ function CreateQuestionForm({
 
   return (
     <div>
-      <form className="create-form" onSubmit={handleSubmit}>
-        <h2>Create Question</h2>
+      <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
+        <h2 className="m-0">Create Question</h2>
         <input
+          className="w-full rounded-md border border-[#cfd5e6] px-3 py-[11px]"
           type="text"
           placeholder="Question text"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <button className="primary-button" type="submit">
+        <button
+          className="cursor-pointer self-start rounded-md bg-[#172033] px-3.5 py-2.5 font-bold text-white"
+          type="submit"
+        >
           Create Question
         </button>
       </form>

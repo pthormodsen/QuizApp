@@ -1,0 +1,16 @@
+# Local development database only. Credentials are intentionally simple/hardcoded
+# here since this is not deployed anywhere; use real secrets management before that changes.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: quizapp
+      POSTGRES_USER: quizapp
+      POSTGRES_PASSWORD: quizapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - quizapp-postgres-data:/var/lib/postgresql
+
+volumes:
+  quizapp-postgres-data:
