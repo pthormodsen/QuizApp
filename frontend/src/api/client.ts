@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8080";
+const API_BASE = "";
 const TOKEN_KEY = "quizapp_token";
 
 class ApiError extends Error {

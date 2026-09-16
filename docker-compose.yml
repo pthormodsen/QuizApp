@@ -1,16 +1,46 @@
-# Local development database only. Credentials are intentionally simple/hardcoded
-# here since this is not deployed anywhere; use real secrets management before that changes.
 services:
+  frontend:
+    build:
+      context: ./frontend
+    container_name: quizapp
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - quizapp
+      - cloudflare
+
+  backend:
+    build: .
+    container_name: quizapp-backend
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/quizapp
+      SPRING_DATASOURCE_USERNAME: quizapp
+      SPRING_DATASOURCE_PASSWORD: quizapp
+    networks:
+      - quizapp
+
   postgres:
     image: postgres:18
+    container_name: quizapp-db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: quizapp
       POSTGRES_USER: quizapp
       POSTGRES_PASSWORD: quizapp
-    ports:
-      - "5432:5432"
     volumes:
       - quizapp-postgres-data:/var/lib/postgresql
+    networks:
+      - quizapp
 
 volumes:
   quizapp-postgres-data:
+
+networks:
+  quizapp:
+  cloudflare:
+    external: true
+    name: cloudflare
