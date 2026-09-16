@@ -40,6 +40,11 @@ public class AnswerOptionService {
 
         answerOption = answerOptionRepository.save(answerOption);
 
+        if (answerOption.isCorrect()) {
+            // Single-answer multiple choice: only one option per question may be correct.
+            answerOptionRepository.clearOtherCorrectAnswers(questionId, answerOption.getId());
+        }
+
         return toResponse(answerOption);
     }
 
@@ -62,10 +67,41 @@ public class AnswerOptionService {
             return null;
         }
 
-        answerOption.setCorrect(request.correct());
+        if (request.text() != null) {
+            if (request.text().isBlank()) {
+                throw new IllegalArgumentException("Answer text cannot be blank");
+            }
+            answerOption.setText(request.text());
+        }
+        if (request.correct() != null) {
+            answerOption.setCorrect(request.correct());
+        }
         answerOption = answerOptionRepository.save(answerOption);
 
+        if (answerOption.isCorrect()) {
+            // Single-answer multiple choice: only one option per question may be correct.
+            answerOptionRepository.clearOtherCorrectAnswers(questionId, answerOption.getId());
+        }
+
         return toResponse(answerOption);
+    }
+
+    @Transactional
+    public boolean deleteAnswerOption(Long questionId, Long answerId, Long ownerId) {
+        Question question = findOwnedQuestion(questionId, ownerId);
+
+        if (question == null) {
+            return false;
+        }
+
+        AnswerOption answerOption = answerOptionRepository.findById(answerId).orElse(null);
+
+        if (answerOption == null || !answerOption.getQuestion().getId().equals(questionId)) {
+            return false;
+        }
+
+        answerOptionRepository.delete(answerOption);
+        return true;
     }
 
     @Transactional

@@ -1,0 +1,60 @@
+# Production deployment stack: Postgres + backend API + frontend (nginx, also
+# reverse-proxies /api/* to the backend so the browser never needs CORS).
+#
+# Usage on the server:
+#   cp .env.example .env   # fill in POSTGRES_PASSWORD, JWT_SECRET, PUBLIC_ORIGIN
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# The frontend is published on 127.0.0.1:${APP_PORT:-8090} only - point your
+# cloudflared ingress rule at http://localhost:${APP_PORT:-8090}.
+#
+# Explicit project name: without this, Compose derives the project name from the
+# directory name, which collides with docker-compose.yml (the dev-only Postgres
+# file) and would recreate/replace its containers on `up`. Never remove this.
+name: quizapp-prod
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-quizapp}"
+      POSTGRES_USER: "${POSTGRES_USER:-quizapp}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+    volumes:
+      - quizapp_prod_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quizapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:-quizapp}"
+      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER:-quizapp}"
+      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      SPRING_JPA_SHOW_SQL: "false"
+      APP_JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env, see .env.example}"
+      APP_JWT_EXPIRATION_MS: "${JWT_EXPIRATION_MS:-86400000}"
+      APP_CORS_ALLOWED_ORIGINS: "${PUBLIC_ORIGIN:-http://localhost:8090}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${APP_PORT:-8090}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  quizapp_prod_postgres_data:

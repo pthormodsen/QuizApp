@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiPost } from "../api/client";
+import { apiPost, ApiError } from "../api/client";
 
 type AnswerOption = {
   id: number;
@@ -18,60 +18,67 @@ function AnswerOptionForm({
 }: AnswerOptionFormProps) {
   const [text, setText] = useState("");
   const [correct, setCorrect] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setError(null);
+
     if (text.trim() === "") {
-      alert("Answer text is required");
+      setError("Answer text is required");
       return;
     }
-    await submitForm();
-    clearForm();
-  };
 
-  const submitForm = async () => {
     try {
+      setIsSubmitting(true);
       const createdAnswerOption = await apiPost<AnswerOption>(
         `/api/questions/${questionId}/answers`,
         { text, correct },
       );
       onAnswerOptionCreated(createdAnswerOption);
-    } catch (error) {
-      console.error("Error creating answer option:", error);
+      setText("");
+      setCorrect(false);
+    } catch (err) {
+      console.error("Error creating answer option:", err);
+      setError(err instanceof ApiError ? err.message : "Failed to add answer. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
-  };
-
-  const clearForm = () => {
-    setText("");
-    setCorrect(false);
   };
 
   return (
     <form
-      className="flex flex-wrap items-center gap-2.5"
+      className="flex flex-col gap-2"
       onSubmit={handleSubmit}
     >
-      <input
-        className="min-w-[160px] flex-1 rounded-md border border-[#cfd5e6] px-2.5 py-2"
-        type="text"
-        placeholder="Answer text"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
-      <label className="flex items-center gap-1.5 text-sm">
+      {error && <p className="m-0 text-red-600">{error}</p>}
+      <div className="flex flex-wrap items-center gap-2.5">
         <input
-          type="checkbox"
-          checked={correct}
-          onChange={(e) => setCorrect(e.target.checked)}
+          className="field min-w-[160px] flex-1 px-2.5 py-2"
+          type="text"
+          placeholder="Answer text"
+          value={text}
+          disabled={isSubmitting}
+          onChange={(e) => setText(e.target.value)}
         />
-        Correct
-      </label>
-      <button
-        className="cursor-pointer rounded-md bg-[#eef1ff] px-3.5 py-2.5 font-bold text-[#172033]"
-        type="submit"
-      >
-        Add answer
-      </button>
+        <label className="flex items-center gap-1.5 text-sm">
+          <input
+            type="checkbox"
+            checked={correct}
+            disabled={isSubmitting}
+            onChange={(e) => setCorrect(e.target.checked)}
+          />
+          Correct
+        </label>
+        <button
+          className="btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          type="submit"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? "Adding..." : "Add answer"}
+        </button>
+      </div>
     </form>
   );
 }

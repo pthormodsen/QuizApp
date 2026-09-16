@@ -6,6 +6,7 @@ import no.patreek.quiz.dto.auth.RegisterRequest;
 import no.patreek.quiz.model.User;
 import no.patreek.quiz.repository.UserRepository;
 import no.patreek.quiz.security.JwtService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -23,21 +24,30 @@ public class AuthService {
     }
 
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
+        String email = normalizeEmail(request.email());
+
+        if (userRepository.existsByEmail(email)) {
             throw new EmailAlreadyTakenException();
         }
 
         User user = new User();
-        user.setEmail(request.email());
+        user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user = userRepository.save(user);
+
+        try {
+            user = userRepository.save(user);
+        } catch (DataIntegrityViolationException ex) {
+            // Another request registered the same email between our check and this save.
+            throw new EmailAlreadyTakenException();
+        }
 
         String token = jwtService.generateToken(user);
         return new AuthResponse(user.getId(), user.getEmail(), token);
     }
 
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.email()).orElse(null);
+        String email = normalizeEmail(request.email());
+        User user = userRepository.findByEmail(email).orElse(null);
 
         if (user == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new InvalidCredentialsException();
@@ -45,6 +55,10 @@ public class AuthService {
 
         String token = jwtService.generateToken(user);
         return new AuthResponse(user.getId(), user.getEmail(), token);
+    }
+
+    private static String normalizeEmail(String email) {
+        return email.trim().toLowerCase();
     }
 
     public static class EmailAlreadyTakenException extends RuntimeException {
