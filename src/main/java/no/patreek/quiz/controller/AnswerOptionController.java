@@ -1,5 +1,6 @@
 package no.patreek.quiz.controller;
 
+import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import no.patreek.quiz.dto.quiz.AnswerOptionResponse;
@@ -9,6 +10,7 @@ import no.patreek.quiz.model.User;
 import no.patreek.quiz.service.AnswerOptionService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,7 +32,7 @@ public class AnswerOptionController {
     @PostMapping
     public ResponseEntity<AnswerOptionResponse> createAnswerOption(
             @PathVariable Long questionId,
-            @RequestBody CreateAnswerOptionRequest request,
+            @Valid @RequestBody CreateAnswerOptionRequest request,
             @AuthenticationPrincipal User currentUser
     ) {
         AnswerOptionResponse response = answerOptionService.createAnswerOption(questionId, request, currentUser.getId());
@@ -62,7 +64,7 @@ public class AnswerOptionController {
     public ResponseEntity<AnswerOptionResponse> updateAnswerOption(
             @PathVariable Long questionId,
             @PathVariable Long answerId,
-            @RequestBody UpdateAnswerOptionRequest request,
+            @Valid @RequestBody UpdateAnswerOptionRequest request,
             @AuthenticationPrincipal User currentUser
     ) {
         AnswerOptionResponse response = answerOptionService.updateAnswerOption(questionId, answerId, request, currentUser.getId());
@@ -72,5 +74,20 @@ public class AnswerOptionController {
         }
 
         return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{answerId}")
+    public ResponseEntity<Void> deleteAnswerOption(
+            @PathVariable Long questionId,
+            @PathVariable Long answerId,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        boolean deleted = answerOptionService.deleteAnswerOption(questionId, answerId, currentUser.getId());
+
+        if (!deleted) {
+            return ResponseEntity.notFound().build();
+        }
+
+        return ResponseEntity.noContent().build();
     }
 }

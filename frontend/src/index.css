@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+@theme {
+  --color-primary: #5d6fe4;
+  --color-ink: #172033;
+  --color-border: #dfe3f0;
+  --color-border-input: #cfd5e6;
+  --color-surface: #eef1ff;
+  --color-muted: #5a6275;
+  --shadow-card: 0 10px 24px rgba(22, 28, 45, 0.14);
+}
+
 @layer base {
   html,
   body,
@@ -8,6 +18,57 @@
   }
 
   body {
-    @apply font-sans text-[#172033];
+    @apply font-sans text-ink;
+  }
+}
+
+@layer components {
+  /* Full-height page background used by the login/register screens */
+  .page-shell {
+    @apply flex min-h-screen w-full items-center justify-center bg-primary px-5 py-8;
+  }
+
+  /* White rounded panel used for forms and content boxes */
+  .card {
+    @apply rounded-lg border border-border bg-white p-[18px] shadow-card;
+  }
+
+  /* Highlighted panel for the quiz currently being played or edited */
+  .card-active {
+    @apply rounded-lg border-2 border-primary bg-surface p-[18px] shadow-lg;
+  }
+
+  /* Text input / textarea styling */
+  .field {
+    @apply rounded-md border border-border-input px-3 py-[11px];
+  }
+
+  /* Small bold uppercase label, e.g. "Selected quiz" */
+  .eyebrow {
+    @apply text-[13px] font-bold text-primary uppercase;
+  }
+
+  /* Row of buttons below a form */
+  .button-row {
+    @apply flex flex-wrap justify-center gap-2.5;
+  }
+
+  /* Dark, high-emphasis button (submit, primary actions) */
+  .btn-primary {
+    @apply cursor-pointer rounded-md bg-ink px-3.5 py-2.5 font-bold text-white;
+  }
+
+  /* Light, low-emphasis button (cancel, secondary actions) */
+  .btn-secondary {
+    @apply cursor-pointer rounded-md bg-surface px-3.5 py-2.5 font-bold text-ink;
+  }
+
+  /* Low-emphasis button for destructive actions (delete) */
+  .btn-danger {
+    @apply cursor-pointer rounded-md bg-surface px-3.5 py-2.5 font-bold text-red-600;
+  }
+
+  .title {
+    @apply mb-2 flex justify-center text-2xl font-bold
   }
 }
