@@ -49,6 +49,10 @@ function RegisterPage() {
         onSubmit={handleSubmit}
       >
         <h2 className="title">Create an account</h2>
+        <p className="m-0 text-muted">
+          Recruiters and visitors can preview the app instantly with the demo
+          flow.
+        </p>
         {error && <p className="m-0 mb-3 text-red-600">{error}</p>}
         <input
           className="field w-full"
@@ -77,6 +81,12 @@ function RegisterPage() {
           >
             {isSubmitting ? "Creating account..." : "Register"}
           </button>
+          <Link
+            className="rounded-md bg-[#eef1ff] px-3.5 py-2.5 font-bold text-[#172033] no-underline"
+            to="/demo"
+          >
+            View demo
+          </Link>
         </div>
         <p className="m-0 text-center">
           Already have an account? <Link className="font-semibold underline" to="/login">Log in</Link>

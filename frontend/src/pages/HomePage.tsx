@@ -4,7 +4,7 @@ import CreateQuizForm from "../components/CreateQuizForm";
 import EditQuizForm from "../components/EditQuizForm";
 import QuestionList from "../components/QuestionList";
 import QuizPlayer from "../components/QuizPlayer";
-import { apiGet, apiDelete, ApiError } from "../api/client";
+import { apiGet, apiDelete, ApiError, isDemoMode, resetDemoData } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
 type Quiz = {
@@ -25,6 +25,7 @@ type QuizReadiness = {
 
 function HomePage() {
   const { logout } = useAuth();
+  const demoMode = isDemoMode();
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
@@ -150,6 +151,16 @@ function HomePage() {
     return <p className="m-8 p-[18px]">Loading quizzes...</p>;
   }
 
+  const handleHeaderAction = () => {
+    if (demoMode) {
+      resetDemoData();
+      window.location.reload();
+      return;
+    }
+
+    logout();
+  };
+
   return (
     <div className="min-h-screen w-full bg-primary px-5 py-8">
       <div className="mx-auto w-full max-w-[900px]">
@@ -157,7 +168,9 @@ function HomePage() {
           <div>
             <h1 className="m-0 text-4xl font-bold sm:text-[40px]">Quiz App</h1>
             <p className="mt-2 mb-0 text-surface">
-              Build, manage and test yourself
+              {demoMode
+                ? "Explore the app with example data, no account or backend setup needed"
+                : "Build, manage and test yourself"}
             </p>
           </div>
 
@@ -165,8 +178,8 @@ function HomePage() {
             <button className="btn-primary" onClick={() => setShowCreateForm(true)}>
               Create new quiz
             </button>
-            <button className="btn-secondary" onClick={logout}>
-              Log out
+            <button className="btn-secondary" onClick={handleHeaderAction}>
+              {demoMode ? "Reset demo" : "Log out"}
             </button>
           </div>
         </header>
@@ -175,6 +188,20 @@ function HomePage() {
           <div className="card mb-6 flex flex-wrap items-center justify-between gap-3">
             <p className="m-0 text-red-600">{loadError}</p>
           </div>
+        )}
+
+        {demoMode && (
+          <section className="card mb-6">
+            <span className="eyebrow">Recruiter demo</span>
+            <h2 className="mt-1 mb-2 text-ink">
+              Try the full quiz workflow with disposable sample data.
+            </h2>
+            <p className="m-0 leading-[1.45] text-muted">
+              Start a quiz to see the player and score screen, manage questions
+              to inspect the authoring tools, or create your own quiz. Changes
+              stay in this browser session and can be reset anytime.
+            </p>
+          </section>
         )}
 
         {showCreateForm && (

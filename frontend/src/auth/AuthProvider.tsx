@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { apiPost, clearToken, getToken, setToken, setUnauthorizedHandler } from "../api/client";
+import { apiPost, clearToken, getToken, isDemoMode, setToken, setUnauthorizedHandler } from "../api/client";
 import { AuthContext } from "./AuthContext";
 import type { AuthUser } from "./AuthContext";
 
@@ -11,6 +11,10 @@ type AuthResponse = {
 };
 
 function readStoredUser(): AuthUser | null {
+  if (isDemoMode()) {
+    return { id: 1, email: "demo@example.com" };
+  }
+
   const token = getToken();
   const email = localStorage.getItem("quizapp_email");
   const userId = localStorage.getItem("quizapp_user_id");
@@ -40,18 +44,33 @@ function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
+    if (isDemoMode()) {
+      setUser({ id: 1, email: "demo@example.com" });
+      return;
+    }
+
     const response = await apiPost<AuthResponse>("/api/auth/login", { email, password });
     storeUser(response);
     setUser({ id: response.userId, email: response.email });
   };
 
   const register = async (email: string, password: string) => {
+    if (isDemoMode()) {
+      setUser({ id: 1, email: "demo@example.com" });
+      return;
+    }
+
     const response = await apiPost<AuthResponse>("/api/auth/register", { email, password });
     storeUser(response);
     setUser({ id: response.userId, email: response.email });
   };
 
   const logout = () => {
+    if (isDemoMode()) {
+      setUser({ id: 1, email: "demo@example.com" });
+      return;
+    }
+
     clearToken();
     localStorage.removeItem("quizapp_email");
     localStorage.removeItem("quizapp_user_id");

@@ -74,6 +74,12 @@ function LoginPage() {
           >
             {isSubmitting ? "Logging in..." : "Log in"}
           </button>
+          <Link
+            className="rounded-md bg-[#eef1ff] px-3.5 py-2.5 font-bold text-[#172033] no-underline"
+            to="/demo"
+          >
+            View demo
+          </Link>
         </div>
         <p className="m-0 text-center">
           No account yet? <Link className="font-semibold underline" to="/register">Register</Link>
