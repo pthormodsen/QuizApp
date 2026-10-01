@@ -12,15 +12,18 @@ docker01     → docker compose pull && docker compose up -d
 
 `docker-compose.prod.yml` runs three containers: Postgres, the Spring Boot
 backend, and an nginx container that serves the built React app and
-reverse-proxies `/api/*` to the backend (same origin, so no CORS is needed). Only
-the frontend container is published, on `127.0.0.1:${APP_PORT}` (default `8090`) -
-nothing is exposed to the public internet directly; your Cloudflare Tunnel reaches
-it via localhost. Backend and Postgres are reachable only on the internal compose
-network.
+reverse-proxies `/api/*` to the backend (same origin, so no CORS is needed). No
+ports are published to the host. The frontend also joins the external Docker
+network `cloudflare` (shared with the `cloudflared` container) under the alias
+`quizapp`, so the tunnel reaches it at `http://quizapp:80`. Backend and Postgres
+are only on the internal compose network.
 
 ## What the server needs
 
-Just two files in one directory (e.g. `~/quizapp`):
+Docker + the Compose plugin, the external `cloudflare` Docker network with the
+`cloudflared` container attached (already true on docker01; on a fresh host create
+it with `docker network create cloudflare`), and two files in one directory
+(e.g. `~/quizapp`):
 
 - `docker-compose.prod.yml` (from this repo)
 - `.env` (created from `.env.example`, never committed)
@@ -37,7 +40,6 @@ but it isn't required - nginx config is baked into the frontend image.
 | `POSTGRES_DB` / `POSTGRES_USER` | no (default `quizapp`) | Database name / user |
 | `JWT_EXPIRATION_MS` | no (default `86400000`) | Token lifetime |
 | `PUBLIC_ORIGIN` | recommended | Public URL, used for CORS, e.g. `https://quiz.patreek.no` |
-| `APP_PORT` | no (default `8090`) | Host port on 127.0.0.1 that cloudflared targets |
 | `QUIZAPP_IMAGE_TAG` | no (default `latest`) | Image tag to run: `latest` or a full commit SHA |
 
 `POSTGRES_*` values only take effect when the data volume is first created; never
@@ -69,10 +71,13 @@ The credential is stored in `~/.docker/config.json` of the user that runs
    ```bash
    cp .env.example .env
    openssl rand -base64 48   # paste the output in as JWT_SECRET
-   nano .env                 # set POSTGRES_PASSWORD, JWT_SECRET, PUBLIC_ORIGIN, APP_PORT
+   nano .env                 # set POSTGRES_PASSWORD, JWT_SECRET, PUBLIC_ORIGIN
    ```
 3. Authenticate to GHCR if the packages are private (see above).
-4. Pull and start:
+4. Make sure the external network exists (`docker network ls | grep cloudflare`);
+   `up` fails with "network cloudflare declared as external, but could not be
+   found" otherwise.
+5. Pull and start:
    ```bash
    docker compose -f docker-compose.prod.yml pull
    docker compose -f docker-compose.prod.yml up -d
@@ -84,24 +89,31 @@ The credential is stored in `~/.docker/config.json` of the user that runs
 The compose project name (`quizapp-prod`) and volume name are unchanged, so
 existing data in `quizapp_prod_postgres_data` is reused. Just update
 `docker-compose.prod.yml`, add `QUIZAPP_IMAGE_TAG=latest` to `.env` (optional),
-then run the pull/up commands above. Never run `docker compose down -v`. The old
-locally built images can be removed afterwards with `docker image prune`.
+remove `APP_PORT` from `.env` (no longer used), then run the pull/up commands
+above. Never run `docker compose down -v`. The old locally built images can be
+removed afterwards with `docker image prune`.
+
+Make sure no other container on the `cloudflare` network still answers to the name
+`quizapp` (e.g. a container from the root `docker-compose.yml`, whose frontend uses
+`container_name: quizapp`) - otherwise Docker DNS would round-robin tunnel traffic
+between them. Check with
+`docker network inspect cloudflare --format '{{range .Containers}}{{.Name}} {{end}}'`.
 
 ## Wire up the Cloudflare Tunnel (first deployment only)
 
-Add an ingress rule to your existing `cloudflared` `config.yml` (before the final
-catch-all `http_status:404` rule), pointing at the port from `.env`:
+The `cloudflared` container resolves QuizApp by its network alias on the shared
+`cloudflare` network. Route the hostname to `http://quizapp:80` - in the tunnel's
+public hostname settings in the Cloudflare dashboard, or in `config.yml` (before the
+final catch-all rule) if the tunnel is locally configured:
 
 ```yaml
 ingress:
   - hostname: quiz.patreek.no
-    service: http://localhost:8090
+    service: http://quizapp:80
   - service: http_status:404
 ```
 
-Then restart cloudflared (`sudo systemctl restart cloudflared`) and add the usual
-CNAME record for `quiz.patreek.no` in the Cloudflare dashboard, pointing at your
-tunnel.
+The `quiz.patreek.no` DNS record points at the tunnel as for your other apps.
 
 ## Normal deployment
 
@@ -124,7 +136,7 @@ docker compose -f docker-compose.prod.yml ps                 # STATUS shows (hea
 docker compose -f docker-compose.prod.yml logs -f backend
 docker compose -f docker-compose.prod.yml logs -f frontend
 docker compose -f docker-compose.prod.yml logs -f postgres
-curl -I http://127.0.0.1:8090/                               # frontend via nginx
+docker run --rm --network cloudflare busybox wget -qS --spider http://quizapp:80/   # what cloudflared sees
 docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' quizapp-prod-backend-1   # running commit
 ```
 
