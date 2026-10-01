@@ -72,11 +72,28 @@ describe("HomePage tabs", () => {
     expect(window.location.search).toBe("?set=2");
 
     fireEvent.click(tab("Quizzes"));
-    expect(screen.queryByRole("heading", { name: "Editing study set" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Web Security Terms" })).not.toBeInTheDocument();
     fireEvent.click(tab("Study sets"));
 
-    expect(await screen.findByRole("heading", { name: "Editing study set" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Web Security Terms" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("Web Security Terms")).toBeInTheDocument();
+  });
+});
+
+describe("HomePage study set editing across tabs", () => {
+  it("keeps unsaved study set details when switching to Quizzes and back", async () => {
+    renderAt("/demo?set=1");
+    const title = await screen.findByDisplayValue("Spanish Basics");
+
+    fireEvent.change(title, { target: { value: "Spanish 101" } });
+    fireEvent.click(tab("Quizzes"));
+    expect(title).not.toBeVisible();
+    fireEvent.click(tab("Study sets"));
+
+    // Same field, still edited: the editor was hidden, not unmounted.
+    expect(title).toBeVisible();
+    expect(title).toHaveValue("Spanish 101");
+    expect(screen.getByText("Unsaved changes")).toBeVisible();
   });
 });
 
@@ -84,7 +101,7 @@ describe("HomePage study set URLs", () => {
   it("opens the editor for /demo?set=<id>", async () => {
     renderAt("/demo?set=1");
 
-    expect(await screen.findByRole("heading", { name: "Editing study set" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Spanish Basics" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("Spanish Basics")).toBeInTheDocument();
     expect(await screen.findByDisplayValue("hola")).toBeInTheDocument();
   });
@@ -109,7 +126,7 @@ describe("HomePage study set URLs", () => {
 
     await historyGo(1);
     expect(window.location.search).toBe("?set=1");
-    expect(screen.getByRole("heading", { name: "Editing study set" })).toHaveFocus();
+    expect(screen.getByRole("heading", { level: 2, name: "Spanish Basics" })).toHaveFocus();
   });
 
   it("shows a not-found state for a nonexistent set", async () => {
@@ -118,5 +135,35 @@ describe("HomePage study set URLs", () => {
     expect(await screen.findByRole("heading", { name: "Study set not found" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
     expect(await screen.findByRole("button", { name: "Spanish Basics" })).toBeInTheDocument();
+  });
+});
+
+describe("HomePage study sessions", () => {
+  it("moves between a set and a study session with browser Back and Forward in demo mode", async () => {
+    renderAt("/demo?set=1");
+    fireEvent.click(await screen.findByRole("button", { name: /^Flashcards/ }));
+    expect(window.location.search).toBe("?set=1&study=flashcards");
+    expect(await screen.findByText(/^Card 1 \//)).toBeInTheDocument();
+
+    await historyGo(-1);
+    expect(window.location.search).toBe("?set=1");
+    expect(screen.getByRole("button", { name: /^Flashcards/ })).toHaveFocus();
+
+    await historyGo(1);
+    expect(screen.getByRole("heading", { level: 2, name: "Spanish Basics" })).toHaveFocus();
+    expect(await screen.findByText(/^Card 1 \//)).toBeInTheDocument();
+  });
+
+  it("keeps the study session while visiting the Quizzes tab", async () => {
+    renderAt("/demo?set=1&study=flashcards");
+    expect(await screen.findByText(/^Card 1 \//)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Next/ }));
+
+    fireEvent.click(tab("Quizzes"));
+    // Shortcuts don't reach the hidden session.
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    fireEvent.click(tab("Study sets"));
+
+    expect(screen.getByText(/^Card 2 \//)).toBeVisible();
   });
 });

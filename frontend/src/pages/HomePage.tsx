@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import CreateQuestionForm from "../components/CreateQuestionForm";
 import CreateQuizForm from "../components/CreateQuizForm";
 import EditQuizForm from "../components/EditQuizForm";
@@ -6,7 +6,7 @@ import QuestionList from "../components/QuestionList";
 import QuizPlayer from "../components/QuizPlayer";
 import Alert from "../components/Alert";
 import { SkeletonCard } from "../components/Skeleton";
-import StudySetsPanel from "../components/StudySetsPanel";
+import StudySetsPanel, { type StudySetsPanelHandle } from "../components/StudySetsPanel";
 import { apiGet, apiDelete, ApiError, isDemoMode, resetDemoData } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
@@ -32,6 +32,7 @@ function HomePage() {
   const { logout } = useAuth();
   const demoMode = isDemoMode();
   const [view, setView] = useState<HomeView>("studySets");
+  const studySetsRef = useRef<StudySetsPanelHandle>(null);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
@@ -160,6 +161,10 @@ function HomePage() {
       return;
     }
 
+    // Logging out clears the token, so unsaved study set changes can't be saved afterwards.
+    if (studySetsRef.current && !studySetsRef.current.confirmLeave("Log out")) {
+      return;
+    }
     logout();
   };
 
@@ -216,9 +221,12 @@ function HomePage() {
           </section>
         )}
 
-        {view === "studySets" && <StudySetsPanel />}
+        {/* Both views stay mounted while hidden so in-progress work (a quiz being played,
+            unsaved edits, a pending or failed save) survives tab switches. */}
+        <div hidden={view !== "studySets"}>
+          <StudySetsPanel ref={studySetsRef} />
+        </div>
 
-        {/* Kept mounted while hidden so an in-progress quiz or unsaved quiz edits survive tab switches. */}
         <div hidden={view !== "quizzes"}>
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
             <h2 className="page-title">{activeQuiz ? "Other quizzes" : "Available Quizzes"}</h2>

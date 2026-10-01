@@ -1,18 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
-import StudySetsPanel from "./StudySetsPanel";
-import { apiDelete, apiGet, apiPost } from "../api/client";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { createRef } from "react";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import StudySetsPanel, { type StudySetsPanelHandle } from "./StudySetsPanel";
+import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "../api/client";
 import type { StudySet } from "../api/types";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
-  return { ...actual, apiGet: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn() };
+  return { ...actual, apiGet: vi.fn(), apiPost: vi.fn(), apiPatch: vi.fn(), apiDelete: vi.fn() };
 });
 
 const mockedApiGet = vi.mocked(apiGet);
 const mockedApiPost = vi.mocked(apiPost);
 const mockedApiDelete = vi.mocked(apiDelete);
+const mockedApiPatch = vi.mocked(apiPatch);
 
 const spanish: StudySet = {
   id: 1,
@@ -36,11 +38,22 @@ function LocationProbe() {
   return <output data-testid="search">{location.search}</output>;
 }
 
-function renderPanel(initialEntry = "/") {
+// Stands in for the browser's Back button.
+function HistoryBack() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      Browser back
+    </button>
+  );
+}
+
+function renderPanel(initialEntry = "/", ref?: React.Ref<StudySetsPanelHandle>) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <StudySetsPanel />
+      <StudySetsPanel ref={ref} />
       <LocationProbe />
+      <HistoryBack />
     </MemoryRouter>,
   );
 }
@@ -51,6 +64,7 @@ beforeEach(() => {
   mockedApiGet.mockReset();
   mockedApiPost.mockReset();
   mockedApiDelete.mockReset();
+  mockedApiPatch.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -118,7 +132,7 @@ describe("StudySetsPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "French Basics" }));
 
     expect(currentSearch()).toBe("?set=2");
-    expect(screen.getByRole("heading", { name: "Editing study set" })).toHaveFocus();
+    expect(screen.getByRole("heading", { level: 2, name: "French Basics" })).toHaveFocus();
     expect(screen.getByDisplayValue("French Basics")).toBeInTheDocument();
     expect(await screen.findByText("No terms yet. Add your first term below.")).toBeInTheDocument();
     expect(mockedApiGet).toHaveBeenCalledWith("/api/study-sets/2/terms", expect.any(AbortSignal));
@@ -133,7 +147,7 @@ describe("StudySetsPanel", () => {
     serve([spanish, french]);
     renderPanel("/?set=2");
 
-    expect(await screen.findByRole("heading", { name: "Editing study set" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "French Basics" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("French Basics")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Spanish Basics" })).not.toBeInTheDocument();
   });
@@ -160,7 +174,9 @@ describe("StudySetsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Create/ }));
 
     await waitFor(() => expect(currentSearch()).toBe("?set=9"));
-    expect(screen.getByRole("heading", { name: "Editing study set" })).toHaveFocus();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 2, name: "Biology" })).toHaveFocus(),
+    );
     expect(screen.getByDisplayValue("Biology")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
@@ -187,5 +203,227 @@ describe("StudySetsPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
     expect(currentSearch()).toBe("?demo=true");
+  });
+
+  it("waits for an in-flight save before leaving the editor and updates the card", async () => {
+    serve([spanish]);
+    let resolveSave!: (studySet: StudySet) => void;
+    mockedApiPatch.mockReturnValueOnce(new Promise((resolve) => (resolveSave = resolve)));
+    const confirm = vi.spyOn(window, "confirm");
+    renderPanel("/?set=1");
+
+    const title = await screen.findByRole("textbox", { name: "Title" });
+    fireEvent.change(title, { target: { value: "Spanish 101" } });
+    // Clicking Back blurs the field first, which starts the save.
+    fireEvent.blur(title);
+    fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
+
+    expect(currentSearch()).toBe("?set=1");
+    await act(async () => resolveSave({ ...spanish, title: "Spanish 101" }));
+
+    expect(currentSearch()).toBe("");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Spanish 101" })).toHaveFocus();
+  });
+
+  it("stays in the editor when the save fails and discards the edits after confirming", async () => {
+    serve([spanish]);
+    mockedApiPatch.mockRejectedValueOnce(new ApiError(500, "Server unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderPanel("/?set=1");
+
+    const title = await screen.findByRole("textbox", { name: "Title" });
+    fireEvent.change(title, { target: { value: "Spanish 101" } });
+    fireEvent.blur(title);
+    fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
+
+    expect(await screen.findByText("Server unavailable")).toBeInTheDocument();
+    expect(currentSearch()).toBe("?set=1");
+    expect(confirm).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(currentSearch()).toBe("?set=1");
+    expect(title).toHaveValue("Spanish 101");
+
+    expect(confirm).toHaveBeenLastCalledWith(
+      "Your latest changes to this study set haven't been saved. Discard them and leave?",
+    );
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
+    expect(currentSearch()).toBe("");
+
+    // Discarded means discarded: nothing is saved in the background and the set is unchanged.
+    await act(async () => {});
+    expect(mockedApiPatch).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Spanish Basics" })).toBeInTheDocument();
+  });
+
+  it("does not let a pending Back from one editor close the next editor", async () => {
+    serve([spanish, french]);
+    let resolveSave!: (studySet: StudySet) => void;
+    mockedApiPatch.mockReturnValueOnce(new Promise((resolve) => (resolveSave = resolve)));
+    renderPanel("/");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Spanish Basics" }));
+    const title = screen.getByRole("textbox", { name: "Title" });
+    fireEvent.change(title, { target: { value: "Spanish 101" } });
+    fireEvent.blur(title);
+    // Back waits for the running save...
+    fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
+    expect(currentSearch()).toBe("?set=1");
+    // ...but the user navigates away with the browser before it finishes.
+    fireEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    expect(currentSearch()).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: "French Basics" }));
+    expect(currentSearch()).toBe("?set=2");
+    await act(async () => resolveSave({ ...spanish, title: "Spanish 101" }));
+
+    expect(currentSearch()).toBe("?set=2");
+    expect(screen.getByRole("heading", { level: 2, name: "French Basics" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("French Basics")).toBeInTheDocument();
+  });
+
+  it("asks before logging out with unsaved details and then doesn't save them", async () => {
+    serve([spanish]);
+    mockedApiPatch.mockRejectedValueOnce(new ApiError(500, "Server unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const panel = createRef<StudySetsPanelHandle>();
+    const { unmount } = renderPanel("/?set=1", panel);
+
+    expect(panel.current!.confirmLeave("Log out")).toBe(true); // nothing unsaved yet
+    expect(confirm).not.toHaveBeenCalled();
+
+    const title = await screen.findByRole("textbox", { name: "Title" });
+    fireEvent.change(title, { target: { value: "Spanish 101" } });
+    fireEvent.blur(title);
+    await screen.findByText("Server unavailable");
+
+    expect(panel.current!.confirmLeave("Log out")).toBe(false);
+    expect(confirm).toHaveBeenLastCalledWith(
+      "Your latest changes to this study set haven't been saved. Discard them and log out?",
+    );
+
+    confirm.mockReturnValue(true);
+    expect(panel.current!.confirmLeave("Log out")).toBe(true);
+    unmount(); // what logging out does to the page
+    expect(mockedApiPatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves without asking when nothing changed", async () => {
+    serve([spanish]);
+    const confirm = vi.spyOn(window, "confirm");
+    renderPanel("/?set=1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Back to study sets" }));
+
+    expect(currentSearch()).toBe("");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(mockedApiPatch).not.toHaveBeenCalled();
+  });
+
+  describe("study modes", () => {
+    const terms = [
+      { id: 1, term: "hola", definition: "hello", orderIndex: 0 },
+      { id: 2, term: "adiós", definition: "goodbye", orderIndex: 1 },
+    ];
+    const serveWithTerms = (studySets: StudySet[]) =>
+      mockedApiGet.mockImplementation(async (path: string) =>
+        path === "/api/study-sets" ? studySets : terms,
+      );
+
+    it("starts a mode from the set page via ?study= and returns to it", async () => {
+      serveWithTerms([spanish]);
+      renderPanel("/?set=1");
+
+      fireEvent.click(await screen.findByRole("button", { name: /^Flashcards/ }));
+
+      expect(currentSearch()).toBe("?set=1&study=flashcards");
+      expect(screen.getByRole("heading", { level: 2, name: "Spanish Basics" })).toHaveFocus();
+      expect(await screen.findByText("Card 1 / 2")).toBeInTheDocument();
+      expect(screen.queryByRole("textbox", { name: "Title" })).not.toBeInTheDocument();
+
+      fireEvent.click(within(screen.getByRole("navigation", { name: "Study mode" })).getByRole("button", { name: "Written" }));
+      expect(currentSearch()).toBe("?set=1&study=written");
+      expect(await screen.findByRole("textbox", { name: "Your answer" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Back to set" }));
+      expect(currentSearch()).toBe("?set=1");
+      expect(screen.getByRole("button", { name: /^Written/ })).toHaveFocus();
+      expect(screen.getByRole("textbox", { name: "Title" })).toBeInTheDocument();
+    });
+
+    it("restores a study session directly from the URL and ignores unknown modes", async () => {
+      serveWithTerms([spanish]);
+      // Keep the question order fixed; StudySession uses Math.random for shuffling.
+      vi.spyOn(Math, "random").mockReturnValue(0.9999999);
+      const { unmount } = renderPanel("/?set=1&study=multiple-choice");
+      expect(await screen.findByRole("heading", { name: "hola" })).toBeInTheDocument();
+      expect(screen.getByText("Question 1 of 2")).toBeInTheDocument();
+      unmount();
+
+      renderPanel("/?set=1&study=bogus");
+      expect(await screen.findByRole("textbox", { name: "Title" })).toBeInTheDocument();
+      expect(screen.queryByRole("navigation", { name: "Study mode" })).not.toBeInTheDocument();
+    });
+
+    it("disables modes the set doesn't have enough terms for", async () => {
+      // The term editor syncs the count from the loaded terms, so serve exactly one.
+      mockedApiGet.mockImplementation(async (path: string) =>
+        path === "/api/study-sets" ? [{ ...spanish, termCount: 1 }] : terms.slice(0, 1),
+      );
+      renderPanel("/?set=1");
+
+      expect(await screen.findByDisplayValue("hola")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^Flashcards/ })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /^Multiple choice/ })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /^Multiple choice/ })).toHaveAccessibleDescription(
+        "Add at least 2 terms to use this mode.",
+      );
+    });
+
+    it("waits for a running save before starting a mode", async () => {
+      serveWithTerms([spanish]);
+      let resolveSave!: (studySet: StudySet) => void;
+      mockedApiPatch.mockReturnValueOnce(new Promise((resolve) => (resolveSave = resolve)));
+      renderPanel("/?set=1");
+
+      const title = await screen.findByRole("textbox", { name: "Title" });
+      fireEvent.change(title, { target: { value: "Spanish 101" } });
+      fireEvent.blur(title);
+      fireEvent.click(screen.getByRole("button", { name: /^Flashcards/ }));
+      expect(currentSearch()).toBe("?set=1");
+
+      await act(async () => resolveSave({ ...spanish, title: "Spanish 101" }));
+      expect(currentSearch()).toBe("?set=1&study=flashcards");
+      expect(screen.getByRole("heading", { level: 2, name: "Spanish 101" })).toBeInTheDocument();
+    });
+
+    it("asks before leaving with a failed term save and then discards it", async () => {
+      serveWithTerms([spanish]);
+      mockedApiPatch.mockRejectedValueOnce(new ApiError(500, "Server unavailable"));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+      renderPanel("/?set=1");
+
+      const term = await screen.findByRole("textbox", { name: "Term 1" });
+      fireEvent.change(term, { target: { value: "buenas" } });
+      fireEvent.blur(term, { relatedTarget: screen.getByRole("button", { name: "Back to study sets" }) });
+      fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
+
+      // The save was still running when Back was clicked; it failed, so we stayed.
+      expect(await screen.findByText("Server unavailable")).toBeInTheDocument();
+      expect(currentSearch()).toBe("?set=1");
+
+      fireEvent.click(screen.getByRole("button", { name: "Back to study sets" }));
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(currentSearch()).toBe("");
+      await act(async () => {});
+      expect(mockedApiPatch).toHaveBeenCalledTimes(1);
+    });
   });
 });
