@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { apiDelete, apiGet, ApiError } from "../api/client";
 import type { StudySet } from "../api/types";
 import Alert from "./Alert";
@@ -12,10 +13,31 @@ function StudySetsPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const listHeadingRef = useRef<HTMLHeadingElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const createHeadingRef = useRef<HTMLHeadingElement>(null);
+  const editorHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  // The URL is the single source of truth for which view is open:
+  // no "set" param = list, "?set=new" = create form, "?set=<id>" = editor.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const setParam = searchParams.get("set");
+  const showCreateForm = setParam === "new";
+  const editingParam = setParam !== null && !showCreateForm ? setParam : null;
+
+  // Other params (e.g. ?demo=true) are kept. Opening a view pushes a history
+  // entry so browser Back/Forward move between the list and the editors.
+  const showView = (value: string | null, options?: { replace?: boolean }) =>
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (value === null) {
+        next.delete("set");
+      } else {
+        next.set("set", value);
+      }
+      return next;
+    }, options);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -42,7 +64,30 @@ function StudySetsPanel() {
     return () => controller.abort();
   }, [reloadToken]);
 
-  const editingSet = studySets.find((studySet) => studySet.id === editingId) ?? null;
+  const editingSet =
+    editingParam === null ? null : (studySets.find((s) => String(s.id) === editingParam) ?? null);
+
+  // Move focus when the URL switches views (in-app or via Back/Forward), but not on
+  // the initial render, e.g. after a refresh or when returning from the Quizzes tab.
+  const previousSetParam = useRef(setParam);
+  useEffect(() => {
+    const previous = previousSetParam.current;
+    if (isLoading || previous === setParam) {
+      return;
+    }
+    previousSetParam.current = setParam;
+
+    if (setParam === "new") {
+      createHeadingRef.current?.focus();
+    } else if (setParam !== null) {
+      editorHeadingRef.current?.focus();
+    } else {
+      // Back on the list: return to the card that opened the editor when it still exists.
+      const cards = listRef.current?.querySelectorAll<HTMLElement>("[data-study-set-id]") ?? [];
+      const openedCard = Array.from(cards).find((card) => card.dataset.studySetId === previous);
+      (openedCard?.querySelector("button") ?? listHeadingRef.current)?.focus();
+    }
+  }, [setParam, isLoading]);
 
   const replaceSet = (updated: StudySet) =>
     setStudySets((current) => current.map((s) => (s.id === updated.id ? updated : s)));
@@ -55,9 +100,6 @@ function StudySetsPanel() {
     try {
       await apiDelete(`/api/study-sets/${studySet.id}`);
       setStudySets((current) => current.filter((s) => s.id !== studySet.id));
-      if (editingId === studySet.id) {
-        setEditingId(null);
-      }
       // The deleted card held focus; move it somewhere stable instead of <body>.
       listHeadingRef.current?.focus();
     } catch (error) {
@@ -81,12 +123,30 @@ function StudySetsPanel() {
     );
   }
 
+  if (editingParam !== null && !editingSet && !loadError) {
+    return (
+      <div className="card flex flex-col items-start gap-3">
+        <h2 ref={editorHeadingRef} className="section-title" tabIndex={-1}>
+          Study set not found
+        </h2>
+        <p className="m-0 text-muted">
+          This study set doesn't exist, has been deleted, or you don't have access to it.
+        </p>
+        <button className="btn-secondary" onClick={() => showView(null)}>
+          Back to study sets
+        </button>
+      </div>
+    );
+  }
+
   if (editingSet) {
     return (
       <div className="card-active flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="eyebrow">Editing study set</span>
-          <button className="btn-secondary" onClick={() => setEditingId(null)}>
+          <h2 ref={editorHeadingRef} className="eyebrow" tabIndex={-1}>
+            Editing study set
+          </h2>
+          <button className="btn-secondary" onClick={() => showView(null)}>
             Back to study sets
           </button>
         </div>
@@ -121,7 +181,7 @@ function StudySetsPanel() {
           )}
         </div>
         {!showCreateForm && (loadError || studySets.length > 0) && (
-          <button className="btn-primary" onClick={() => setShowCreateForm(true)}>
+          <button className="btn-primary" onClick={() => showView("new")}>
             New study set
           </button>
         )}
@@ -134,13 +194,15 @@ function StudySetsPanel() {
 
       {showCreateForm && (
         <div className="card max-w-[520px]">
-          <h3 className="section-title mb-4">Create study set</h3>
+          <h3 ref={createHeadingRef} className="section-title mb-4" tabIndex={-1}>
+            Create study set
+          </h3>
           <StudySetForm
-            onCancel={() => setShowCreateForm(false)}
+            onCancel={() => showView(null)}
             onSaved={(created) => {
               setStudySets((current) => [created, ...current]);
-              setShowCreateForm(false);
-              setEditingId(created.id);
+              // Replace "?set=new" so Back from the new set's editor returns to the list.
+              showView(String(created.id), { replace: true });
             }}
           />
         </div>
@@ -153,18 +215,18 @@ function StudySetsPanel() {
             <p className="m-0 max-w-sm text-muted">
               A study set is a list of terms and their definitions you can practise with.
             </p>
-            <button className="btn-primary" onClick={() => setShowCreateForm(true)}>
+            <button className="btn-primary" onClick={() => showView("new")}>
               New study set
             </button>
           </div>
         )
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div ref={listRef} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {studySets.map((studySet) => (
             <StudySetCard
               key={studySet.id}
               studySet={studySet}
-              onOpen={() => setEditingId(studySet.id)}
+              onOpen={() => showView(String(studySet.id))}
               onDelete={() => deleteSet(studySet)}
             />
           ))}

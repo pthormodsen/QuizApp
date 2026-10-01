@@ -38,7 +38,10 @@ function StudySetCard({ studySet, onOpen, onDelete }: StudySetCardProps) {
   const updated = updatedLabel(studySet.updatedAt);
 
   return (
-    <article className="card-interactive relative flex min-h-36 flex-col gap-2">
+    <article
+      className="card-interactive relative flex min-h-36 flex-col gap-2"
+      data-study-set-id={studySet.id}
+    >
       <h3 className="m-0 text-lg font-semibold">
         {/* The overlay makes the whole card clickable while keeping one tab stop. */}
         <button
