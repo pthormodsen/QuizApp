@@ -26,11 +26,41 @@ type DemoAnswerOption = {
   correct: boolean;
 };
 
+type DemoStudySet = {
+  id: number;
+  title: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DemoTerm = {
+  id: number;
+  studySetId: number;
+  term: string;
+  definition: string;
+  orderIndex: number;
+};
+
 type DemoData = {
   quizzes: DemoQuiz[];
   questions: DemoQuestion[];
   answers: DemoAnswerOption[];
+  studySets: DemoStudySet[];
+  terms: DemoTerm[];
 };
+
+const DEMO_SEED_TIMESTAMP = "2026-01-01T12:00:00Z";
+
+function seedTerms(studySetId: number, firstId: number, pairs: Array<[string, string]>): DemoTerm[] {
+  return pairs.map(([term, definition], index) => ({
+    id: firstId + index,
+    studySetId,
+    term,
+    definition,
+    orderIndex: index,
+  }));
+}
 
 const demoSeedData: DemoData = {
   quizzes: [
@@ -80,6 +110,39 @@ const demoSeedData: DemoData = {
     { id: 15, questionId: 7, text: "A stolen token can allow unauthorized requests", correct: true },
     { id: 16, questionId: 7, text: "JWTs make CSS load slower", correct: false },
   ],
+  studySets: [
+    {
+      id: 1,
+      title: "Spanish Basics",
+      description: "Everyday Spanish words for getting around.",
+      createdAt: DEMO_SEED_TIMESTAMP,
+      updatedAt: DEMO_SEED_TIMESTAMP,
+    },
+    {
+      id: 2,
+      title: "Web Security Terms",
+      description: "Core vocabulary for building secure web APIs.",
+      createdAt: DEMO_SEED_TIMESTAMP,
+      updatedAt: DEMO_SEED_TIMESTAMP,
+    },
+  ],
+  terms: [
+    ...seedTerms(1, 1, [
+      ["hola", "hello"],
+      ["gracias", "thank you"],
+      ["por favor", "please"],
+      ["el agua", "water"],
+      ["la cuenta", "the bill"],
+      ["¿dónde está...?", "where is...?"],
+    ]),
+    ...seedTerms(2, 7, [
+      ["JWT", "A signed token that carries claims about the authenticated user"],
+      ["CORS", "Browser mechanism that controls which origins may call an API"],
+      ["XSS", "Injecting script into a page so it runs in other users' browsers"],
+      ["CSRF", "Tricking a logged-in browser into sending an unwanted request"],
+      ["Hashing", "One-way transformation used to store passwords safely"],
+    ]),
+  ],
 };
 
 class ApiError extends Error {
@@ -103,7 +166,8 @@ function isDemoMode(): boolean {
 function readDemoData(): DemoData {
   const storedData = sessionStorage.getItem(DEMO_STORAGE_KEY);
   if (storedData) {
-    return JSON.parse(storedData) as DemoData;
+    // Sessions saved before a collection existed get that collection's seed data.
+    return { ...demoSeedData, ...(JSON.parse(storedData) as Partial<DemoData>) };
   }
 
   sessionStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(demoSeedData));
@@ -120,6 +184,228 @@ function resetDemoData(): void {
 
 function nextId(items: Array<{ id: number }>): number {
   return Math.max(0, ...items.map((item) => item.id)) + 1;
+}
+
+type DemoResult = { value: unknown } | null;
+
+function demoNotFound(): ApiError {
+  return new ApiError(404, "Request failed (404)");
+}
+
+function demoRequireText(
+  request: Record<string, unknown>,
+  fields: Array<[field: string, label: string, max: number]>,
+): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
+  for (const [field, label, max] of fields) {
+    const value = request[field];
+    if (typeof value !== "string" || value.trim() === "") {
+      fieldErrors[field] = `${label} is required`;
+    } else if (value.length > max) {
+      fieldErrors[field] = `${label} must be at most ${max} characters`;
+    }
+  }
+  return fieldErrors;
+}
+
+function demoValidate(fieldErrors: Record<string, string>): void {
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new ApiError(400, "Validation failed", fieldErrors);
+  }
+}
+
+function toDemoStudySetResponse(data: DemoData, studySet: DemoStudySet) {
+  return {
+    ...studySet,
+    termCount: data.terms.filter((term) => term.studySetId === studySet.id).length,
+  };
+}
+
+function demoOrderedTerms(data: DemoData, studySetId: number): DemoTerm[] {
+  return data.terms
+    .filter((term) => term.studySetId === studySetId)
+    .sort((a, b) => a.orderIndex - b.orderIndex || a.id - b.id);
+}
+
+function toDemoTermResponse({ id, term, definition, orderIndex }: DemoTerm) {
+  return { id, term, definition, orderIndex };
+}
+
+function touchDemoStudySet(studySets: DemoStudySet[], studySetId: number): DemoStudySet[] {
+  const now = new Date().toISOString();
+  return studySets.map((studySet) =>
+    studySet.id === studySetId ? { ...studySet, updatedAt: now } : studySet,
+  );
+}
+
+/**
+ * Demo-mode implementation of the /api/study-sets routes, mirroring the backend's
+ * validation, ordering and 404 semantics. Returns null for paths it doesn't own.
+ */
+function handleDemoStudySetRequest(method: string, path: string, body?: unknown): DemoResult {
+  if (!path.startsWith("/api/study-sets")) {
+    return null;
+  }
+
+  const data = readDemoData();
+  const request = (body ?? {}) as Record<string, unknown>;
+  const setMatch = path.match(/^\/api\/study-sets\/(\d+)$/);
+  const termsMatch = path.match(/^\/api\/study-sets\/(\d+)\/terms$/);
+  const reorderMatch = path.match(/^\/api\/study-sets\/(\d+)\/terms\/reorder$/);
+  const termMatch = path.match(/^\/api\/study-sets\/(\d+)\/terms\/(\d+)$/);
+  const studySetId = Number((setMatch ?? termsMatch ?? reorderMatch ?? termMatch)?.[1]);
+  const studySet = data.studySets.find((candidate) => candidate.id === studySetId);
+
+  const validateStudySet = () => {
+    const fieldErrors = demoRequireText(request, [["title", "Title", 200]]);
+    if (typeof request.description === "string" && request.description.length > 1000) {
+      fieldErrors.description = "Description must be at most 1000 characters";
+    }
+    demoValidate(fieldErrors);
+  };
+  const validateTerm = () =>
+    demoValidate(
+      demoRequireText(request, [
+        ["term", "Term", 500],
+        ["definition", "Definition", 1000],
+      ]),
+    );
+  const description = () =>
+    typeof request.description === "string" && request.description.trim() !== ""
+      ? request.description.trim()
+      : null;
+
+  if (path === "/api/study-sets") {
+    if (method === "GET") {
+      const studySets = [...data.studySets].sort(
+        (a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id - a.id,
+      );
+      return { value: studySets.map((candidate) => toDemoStudySetResponse(data, candidate)) };
+    }
+    if (method === "POST") {
+      validateStudySet();
+      const now = new Date().toISOString();
+      const created: DemoStudySet = {
+        id: nextId(data.studySets),
+        title: (request.title as string).trim(),
+        description: description(),
+        createdAt: now,
+        updatedAt: now,
+      };
+      const next = { ...data, studySets: [...data.studySets, created] };
+      writeDemoData(next);
+      return { value: toDemoStudySetResponse(next, created) };
+    }
+    return null;
+  }
+
+  if (!studySet) {
+    throw demoNotFound();
+  }
+
+  if (setMatch) {
+    if (method === "GET") {
+      return { value: toDemoStudySetResponse(data, studySet) };
+    }
+    if (method === "PATCH") {
+      validateStudySet();
+      const updated: DemoStudySet = {
+        ...studySet,
+        title: (request.title as string).trim(),
+        description: description(),
+        updatedAt: new Date().toISOString(),
+      };
+      const next = {
+        ...data,
+        studySets: data.studySets.map((candidate) => (candidate.id === studySetId ? updated : candidate)),
+      };
+      writeDemoData(next);
+      return { value: toDemoStudySetResponse(next, updated) };
+    }
+    if (method === "DELETE") {
+      writeDemoData({
+        ...data,
+        studySets: data.studySets.filter((candidate) => candidate.id !== studySetId),
+        terms: data.terms.filter((term) => term.studySetId !== studySetId),
+      });
+      return { value: undefined };
+    }
+    return null;
+  }
+
+  if (termsMatch) {
+    if (method === "GET") {
+      return { value: demoOrderedTerms(data, studySetId).map(toDemoTermResponse) };
+    }
+    if (method === "POST") {
+      validateTerm();
+      const setTerms = data.terms.filter((term) => term.studySetId === studySetId);
+      const created: DemoTerm = {
+        id: nextId(data.terms),
+        studySetId,
+        term: (request.term as string).trim(),
+        definition: (request.definition as string).trim(),
+        orderIndex: Math.max(-1, ...setTerms.map((term) => term.orderIndex)) + 1,
+      };
+      writeDemoData({
+        ...data,
+        studySets: touchDemoStudySet(data.studySets, studySetId),
+        terms: [...data.terms, created],
+      });
+      return { value: toDemoTermResponse(created) };
+    }
+    return null;
+  }
+
+  if (reorderMatch && method === "PATCH") {
+    const termIds = Array.isArray(request.termIds) ? (request.termIds as number[]) : [];
+    const setTerms = demoOrderedTerms(data, studySetId);
+    const sameTerms =
+      termIds.length === setTerms.length &&
+      new Set(termIds).size === termIds.length &&
+      setTerms.every((term) => termIds.includes(term.id));
+    if (!sameTerms) {
+      throw new ApiError(400, "termIds must contain each term in the set exactly once");
+    }
+    const terms = data.terms.map((term) =>
+      term.studySetId === studySetId ? { ...term, orderIndex: termIds.indexOf(term.id) } : term,
+    );
+    const next = { ...data, studySets: touchDemoStudySet(data.studySets, studySetId), terms };
+    writeDemoData(next);
+    return { value: demoOrderedTerms(next, studySetId).map(toDemoTermResponse) };
+  }
+
+  if (termMatch) {
+    const termId = Number(termMatch[2]);
+    const existing = data.terms.find((term) => term.id === termId && term.studySetId === studySetId);
+    if (!existing) {
+      throw demoNotFound();
+    }
+    if (method === "PATCH") {
+      validateTerm();
+      const updated: DemoTerm = {
+        ...existing,
+        term: (request.term as string).trim(),
+        definition: (request.definition as string).trim(),
+      };
+      writeDemoData({
+        ...data,
+        studySets: touchDemoStudySet(data.studySets, studySetId),
+        terms: data.terms.map((term) => (term.id === termId ? updated : term)),
+      });
+      return { value: toDemoTermResponse(updated) };
+    }
+    if (method === "DELETE") {
+      writeDemoData({
+        ...data,
+        studySets: touchDemoStudySet(data.studySets, studySetId),
+        terms: data.terms.filter((term) => term.id !== termId),
+      });
+      return { value: undefined };
+    }
+  }
+
+  return null;
 }
 
 function getToken(): string | null {
@@ -170,6 +456,11 @@ async function toApiError(response: Response, fallbackMessage: string): Promise<
 
 async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   if (isDemoMode()) {
+    const studySetResult = handleDemoStudySetRequest("GET", path);
+    if (studySetResult) {
+      return studySetResult.value as T;
+    }
+
     const data = readDemoData();
     const quizQuestionsMatch = path.match(/^\/api\/quizzes\/(\d+)\/questions$/);
     const questionAnswersMatch = path.match(/^\/api\/questions\/(\d+)\/answers$/);
@@ -225,6 +516,11 @@ async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
 
 async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   if (isDemoMode()) {
+    const studySetResult = handleDemoStudySetRequest("POST", path, body);
+    if (studySetResult) {
+      return studySetResult.value as T;
+    }
+
     const data = readDemoData();
     const quizQuestionsMatch = path.match(/^\/api\/quizzes\/(\d+)\/questions$/);
     const questionAnswersMatch = path.match(/^\/api\/questions\/(\d+)\/answers$/);
@@ -277,6 +573,11 @@ async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 
 async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   if (isDemoMode()) {
+    const studySetResult = handleDemoStudySetRequest("PATCH", path, body);
+    if (studySetResult) {
+      return studySetResult.value as T;
+    }
+
     const quizMatch = path.match(/^\/api\/quizzes\/(\d+)$/);
     const questionMatch = path.match(/^\/api\/quizzes\/(\d+)\/questions\/(\d+)$/);
     const questionReorderMatch = path.match(/^\/api\/quizzes\/(\d+)\/questions\/reorder$/);
@@ -374,6 +675,10 @@ async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 
 async function apiDelete(path: string): Promise<void> {
   if (isDemoMode()) {
+    if (handleDemoStudySetRequest("DELETE", path)) {
+      return;
+    }
+
     const quizMatch = path.match(/^\/api\/quizzes\/(\d+)$/);
     const questionMatch = path.match(/^\/api\/quizzes\/(\d+)\/questions\/(\d+)$/);
     const answerMatch = path.match(/^\/api\/questions\/(\d+)\/answers\/(\d+)$/);
@@ -385,6 +690,7 @@ async function apiDelete(path: string): Promise<void> {
         .filter((question) => question.quizId === quizId)
         .map((question) => question.id);
       writeDemoData({
+        ...data,
         quizzes: data.quizzes.filter((quiz) => quiz.id !== quizId),
         questions: data.questions.filter((question) => question.quizId !== quizId),
         answers: data.answers.filter((answer) => !questionIds.includes(answer.questionId)),
