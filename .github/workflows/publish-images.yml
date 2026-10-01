@@ -1,0 +1,77 @@
+name: Publish production images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/main/**"
+      - "pom.xml"
+      - "mvnw"
+      - ".mvn/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "frontend/**"
+      - "!frontend/**/*.md"
+      - ".github/workflows/publish-images.yml"
+  workflow_dispatch:
+
+# Never let two runs race to push :latest.
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/pthormodsen/quizapp-backend
+  FRONTEND_IMAGE: ghcr.io/pthormodsen/quizapp-frontend
+
+jobs:
+  publish:
+    # Manual dispatch from another branch must never publish over :latest.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      # Both images are always built and tagged with the same SHA, so any commit
+      # can be rolled back to as a matching backend/frontend pair.
+      - name: Build backend image
+        run: |
+          docker build \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            -t "$BACKEND_IMAGE:${{ github.sha }}" \
+            -t "$BACKEND_IMAGE:latest" \
+            -f Dockerfile .
+
+      - name: Build frontend image
+        run: |
+          docker build \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            -t "$FRONTEND_IMAGE:${{ github.sha }}" \
+            -t "$FRONTEND_IMAGE:latest" \
+            -f frontend/Dockerfile frontend
+
+      # Push SHA tags first so :latest never points at an image whose SHA tag is missing.
+      # :latest only moves if this commit is still the head of main, so re-running an
+      # old workflow run (or a run that finishes after a newer push) can't downgrade it.
+      - name: Push images
+        run: |
+          docker push "$BACKEND_IMAGE:${{ github.sha }}"
+          docker push "$FRONTEND_IMAGE:${{ github.sha }}"
+          main_head="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$main_head" = "${{ github.sha }}" ]; then
+            docker push "$BACKEND_IMAGE:latest"
+            docker push "$FRONTEND_IMAGE:latest"
+          else
+            echo "::warning::${{ github.sha }} is no longer the head of main ($main_head); skipping :latest"
+          fi

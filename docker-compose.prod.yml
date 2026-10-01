@@ -1,16 +1,23 @@
 # Production deployment stack: Postgres + backend API + frontend (nginx, also
 # reverse-proxies /api/* to the backend so the browser never needs CORS).
 #
-# Usage on the server:
-#   cp .env.example .env   # fill in POSTGRES_PASSWORD, JWT_SECRET, PUBLIC_ORIGIN
-#   docker compose -f docker-compose.prod.yml up -d --build
+# Application images are pre-built by GitHub Actions and pulled from GHCR - the
+# server never builds source. Usage on the server (see DEPLOY.md):
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# QUIZAPP_IMAGE_TAG selects which build runs: "latest" (default) or a full git
+# commit SHA for pinning/rollback.
 #
 # The frontend is published on 127.0.0.1:${APP_PORT:-8090} only - point your
 # cloudflared ingress rule at http://localhost:${APP_PORT:-8090}.
 #
+# Watchtower: every service is labelled enable=false so a Watchtower instance
+# (with or without --label-enable) leaves QuizApp alone; deployments are explicit.
+#
 # Explicit project name: without this, Compose derives the project name from the
-# directory name, which collides with docker-compose.yml (the dev-only Postgres
-# file) and would recreate/replace its containers on `up`. Never remove this.
+# directory name, which collides with docker-compose.yml and would
+# recreate/replace its containers on `up`. Never remove this.
 name: quizapp-prod
 
 services:
@@ -27,12 +34,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
     restart: unless-stopped
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: "ghcr.io/pthormodsen/quizapp-backend:${QUIZAPP_IMAGE_TAG:-latest}"
     environment:
       SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:-quizapp}"
       SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER:-quizapp}"
@@ -44,16 +51,30 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # No actuator endpoint exists, so "healthy" means the server accepts TCP on 8080.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: "ghcr.io/pthormodsen/quizapp-frontend:${QUIZAPP_IMAGE_TAG:-latest}"
     ports:
       - "127.0.0.1:${APP_PORT:-8090}:80"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
     restart: unless-stopped
 
 volumes:
