@@ -2,12 +2,19 @@
 
 @theme {
   --color-primary: #5d6fe4;
+  /* Darker brand shades that keep >= 4.5:1 contrast for text and white-on-brand */
+  --color-primary-strong: #4a5bd4;
+  --color-primary-hover: #3b4bc0;
   --color-ink: #172033;
+  --color-canvas: #f6f7fb;
   --color-border: #dfe3f0;
   --color-border-input: #cfd5e6;
   --color-surface: #eef1ff;
   --color-muted: #5a6275;
+  --color-danger: #b42318;
+  --color-success: #12805c;
   --shadow-card: 0 10px 24px rgba(22, 28, 45, 0.14);
+  --shadow-card-sm: 0 1px 2px rgba(22, 28, 45, 0.06), 0 1px 3px rgba(22, 28, 45, 0.08);
 }
 
 @layer base {
@@ -17,8 +24,17 @@
     min-height: 100%;
   }
 
+  /* Keep focused/scrolled-to elements clear of the sticky top bar (two rows on phones) */
+  html {
+    @apply scroll-pt-28 sm:scroll-pt-20;
+  }
+
   body {
-    @apply font-sans text-ink;
+    @apply bg-canvas font-sans text-ink;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary-strong;
   }
 }
 
@@ -30,22 +46,48 @@
 
   /* White rounded panel used for forms and content boxes */
   .card {
-    @apply rounded-lg border border-border bg-white p-[18px] shadow-card;
+    @apply rounded-xl border border-border bg-white p-5 shadow-card-sm;
+  }
+
+  /* Card that is clickable as a whole (e.g. a study set in the list) */
+  .card-interactive {
+    @apply rounded-xl border border-border bg-white p-5 shadow-card-sm transition
+      hover:border-primary hover:shadow-card focus-within:border-primary;
   }
 
   /* Highlighted panel for the quiz currently being played or edited */
   .card-active {
-    @apply rounded-lg border-2 border-primary bg-surface p-[18px] shadow-lg;
+    @apply rounded-xl border-2 border-primary bg-surface p-5 shadow-lg;
   }
 
   /* Text input / textarea styling */
   .field {
-    @apply rounded-md border border-border-input px-3 py-[11px];
+    @apply rounded-lg border border-border-input bg-white px-3 py-2.5 text-ink
+      placeholder:text-muted/70 focus:border-primary focus:ring-2 focus:ring-primary/25
+      focus:outline-none disabled:bg-surface aria-invalid:border-danger;
+  }
+
+  /* Form field label */
+  .label {
+    @apply text-sm font-semibold text-ink;
+  }
+
+  /* Inline validation message under a field */
+  .field-error {
+    @apply m-0 text-sm text-danger;
   }
 
   /* Small bold uppercase label, e.g. "Selected quiz" */
   .eyebrow {
-    @apply text-[13px] font-bold text-primary uppercase;
+    @apply text-xs font-bold tracking-wide text-primary-strong uppercase;
+  }
+
+  .page-title {
+    @apply m-0 text-3xl font-bold tracking-tight text-ink;
+  }
+
+  .section-title {
+    @apply m-0 text-lg font-semibold text-ink;
   }
 
   /* Row of buttons below a form */
@@ -53,19 +95,45 @@
     @apply flex flex-wrap justify-center gap-2.5;
   }
 
-  /* Dark, high-emphasis button (submit, primary actions) */
-  .btn-primary {
-    @apply cursor-pointer rounded-md bg-ink px-3.5 py-2.5 font-bold text-white;
+  /* Shared button base: 44px touch target, hover/disabled states */
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn-ghost,
+  .btn-icon {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg
+      px-4 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
 
-  /* Light, low-emphasis button (cancel, secondary actions) */
+  /* Brand, high-emphasis button (submit, primary actions) */
+  .btn-primary {
+    @apply bg-primary-strong text-white hover:enabled:bg-primary-hover;
+  }
+
+  /* Outlined, low-emphasis button (cancel, secondary actions) */
   .btn-secondary {
-    @apply cursor-pointer rounded-md bg-surface px-3.5 py-2.5 font-bold text-ink;
+    @apply border border-border bg-white text-ink hover:enabled:bg-surface;
   }
 
   /* Low-emphasis button for destructive actions (delete) */
   .btn-danger {
-    @apply cursor-pointer rounded-md bg-surface px-3.5 py-2.5 font-bold text-red-600;
+    @apply border border-border bg-white text-danger hover:enabled:bg-red-50;
+  }
+
+  /* Borderless button for tertiary actions (back, log out, dismiss) */
+  .btn-ghost {
+    @apply bg-transparent text-muted hover:enabled:bg-surface hover:enabled:text-ink;
+  }
+
+  /* Square 44px icon-only button; combine with an aria-label */
+  .btn-icon {
+    @apply size-11 bg-transparent p-0 text-muted hover:enabled:bg-surface hover:enabled:text-ink;
+  }
+
+  /* Error banner (see components/Alert.tsx) */
+  .alert-error {
+    @apply flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200
+      bg-red-50 px-4 py-3 text-sm text-danger;
   }
 
   .title {
