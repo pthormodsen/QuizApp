@@ -24,7 +24,7 @@ jobs:
         include:
           # ---- the only part that differs per repo ----
           - name: backend
-            context: ./backend
+            context:
           - name: frontend
             context: ./frontend
           # ---------------------------------------------
